@@ -34,7 +34,7 @@ export function migrateSave(value) {
 }
 
 export class SaveStore {
-  constructor(storage = globalThis.localStorage) { this.storage = storage; this.data = this.load(); }
+  constructor(storage) { this.storage = storage; this.data = this.load(); }
   load() {
     try {
       const raw = this.storage?.getItem(GAME_CONFIG.saveKey);
