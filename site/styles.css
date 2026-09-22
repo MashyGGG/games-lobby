@@ -1,0 +1,29 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-monospace, "Cascadia Mono", "Microsoft YaHei UI", monospace;
+  --bg: #050b10;
+  --panel: #0b1720;
+  --ink: #d9f8ef;
+  --muted: #769297;
+  --line: #1d3943;
+  --accent: #57f5d0;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% 0, #102934 0, var(--bg) 45%); color: var(--ink); }
+main { width: min(1040px, calc(100% - 32px)); margin: auto; padding: 72px 0 34px; }
+header { border-left: 4px solid var(--accent); padding-left: 24px; margin-bottom: 46px; }
+.eyebrow { color: var(--accent); letter-spacing: .16em; font-size: 12px; }
+h1 { margin: 8px 0; font-size: clamp(44px, 9vw, 90px); line-height: .95; letter-spacing: .05em; }
+h1 span { color: #ff5e6c; }
+.intro { color: var(--muted); max-width: 620px; line-height: 1.7; }
+.game-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 18px; min-height: 220px; }
+.game-card { --card-accent: var(--accent); display: flex; flex-direction: column; min-height: 240px; padding: 22px; color: inherit; text-decoration: none; background: linear-gradient(145deg, #10232e, var(--panel)); border: 1px solid var(--line); box-shadow: inset 0 3px var(--card-accent); transition: transform .16s, border-color .16s; }
+.game-card:hover, .game-card:focus-visible { transform: translateY(-4px); border-color: var(--card-accent); outline: none; }
+.game-card small { color: var(--card-accent); letter-spacing: .14em; }
+.game-card h2 { margin: 36px 0 10px; font-size: 23px; }
+.game-card p { color: var(--muted); line-height: 1.65; font-size: 14px; }
+.game-card strong { margin-top: auto; color: var(--card-accent); }
+.loading, .error { color: var(--muted); }
+.error { color: #ff7f89; }
+footer { margin-top: 56px; color: #49636a; font-size: 11px; letter-spacing: .13em; }
+@media (max-width: 520px) { main { padding-top: 42px; } header { padding-left: 16px; } .game-card { min-height: 210px; } }

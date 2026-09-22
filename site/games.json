@@ -1,0 +1,10 @@
+[
+  {
+    "slug": "system-bugs",
+    "source": "system-bugs",
+    "title": "SYSTEM//BUG：错误预算",
+    "description": "阅读公开规则，注入有限异常，利用副作用完成规则破坏解谜。",
+    "status": "MVP",
+    "accent": "#57f5d0"
+  }
+]

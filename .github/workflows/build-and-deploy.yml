@@ -1,0 +1,87 @@
+name: Build private games and deploy lobby
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/build-and-deploy.yml"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [source-updated]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout public lobby
+        uses: actions/checkout@v4
+
+      - name: Require private source credential
+        if: github.event_name != 'push'
+        env:
+          GAME_MAP_READ_TOKEN: ${{ secrets.GAME_MAP_READ_TOKEN }}
+        run: |
+          if [ -z "$GAME_MAP_READ_TOKEN" ]; then
+            echo "::error::Configure GAME_MAP_READ_TOKEN with Contents Read access to MashyGGG/game-map."
+            exit 1
+          fi
+
+      - name: Checkout private game sources
+        if: github.event_name != 'push'
+        uses: actions/checkout@v4
+        with:
+          repository: MashyGGG/game-map
+          ref: ${{ github.event.client_payload.ref || 'main' }}
+          token: ${{ secrets.GAME_MAP_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+
+      - name: Set up Node.js
+        if: github.event_name != 'push'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build all registered games on the public runner
+        if: github.event_name != 'push'
+        working-directory: private-source
+        run: npm run build
+
+      - name: Replace saved public artifacts
+        if: github.event_name != 'push'
+        run: rsync -a --delete private-source/.pages/ site/
+
+      - name: Save changed artifacts in the public repository
+        if: github.event_name != 'push'
+        run: |
+          git config user.name "MashyGGG Build Bot"
+          git config user.email "chenmasheng0414@gmail.com"
+          git add site
+          if git diff --cached --quiet; then
+            echo "Lobby artifacts are already current."
+          else
+            git commit -m "deploy: rebuild games lobby"
+            git push origin main
+          fi
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

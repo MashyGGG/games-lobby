@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <meta name="theme-color" content="#071018" />
+  <title>SYSTEM//BUG：错误预算</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main id="app" aria-label="SYSTEM BUG 游戏">
+    <section id="boot" class="screen active">
+      <div class="boot-mark" aria-hidden="true">//</div>
+      <h1>SYSTEM<span>//</span>BUG</h1>
+      <p class="subtitle">错误预算</p>
+      <div class="boot-log" id="boot-log">正在校验世界规则…</div>
+      <button id="start-button" class="primary">载入关卡</button>
+      <button id="continue-button" class="ghost hidden">继续进度</button>
+      <p class="micro">所有异常均在本地模拟 · v0.1.0</p>
+    </section>
+
+    <section id="level-select" class="screen">
+      <header class="topbar">
+        <button class="icon-button" data-action="home" aria-label="返回">‹</button>
+        <div><small>LOCAL ARCHIVE</small><h2>关卡索引</h2></div>
+        <button class="icon-button" data-action="settings" aria-label="设置">⚙</button>
+      </header>
+      <div id="chapter-tabs" class="tabs"></div>
+      <div id="level-grid" class="level-grid"></div>
+    </section>
+
+    <section id="game" class="screen">
+      <header class="game-header">
+        <button class="icon-button" data-action="levels" aria-label="关卡列表">☷</button>
+        <div class="mission"><small id="level-code">CASE 01</small><strong id="level-title">规则载入</strong></div>
+        <div class="budget" aria-label="错误预算"><span>BUG</span><b id="budget-value">1</b></div>
+        <button class="icon-button" data-action="pause" aria-label="暂停">Ⅱ</button>
+      </header>
+
+      <div class="status-strip">
+        <span>HP <b id="hp-value">3</b></span>
+        <span>KEY <b id="key-value">0</b></span>
+        <span>TURN <b id="turn-value">0</b></span>
+      </div>
+
+      <div class="canvas-wrap">
+        <canvas id="game-canvas" width="720" height="960" aria-label="游戏棋盘"></canvas>
+        <div id="toast" class="toast" role="status"></div>
+      </div>
+
+      <section class="console-panel">
+        <button id="rules-toggle" class="panel-title" aria-expanded="true"><span>WORLD_RULES</span><small>点击规则可查看因果</small></button>
+        <div id="rule-list" class="rule-list"></div>
+        <div id="bug-tray" class="bug-tray"></div>
+        <button id="inject-button" class="primary inject" disabled>注入所选 BUG</button>
+        <div id="event-log" class="event-log" aria-live="polite"></div>
+      </section>
+
+      <nav class="controls" aria-label="移动控制">
+        <button data-move="up" aria-label="向上">▲</button>
+        <button data-move="left" aria-label="向左">◀</button>
+        <button data-move="down" aria-label="向下">▼</button>
+        <button data-move="right" aria-label="向右">▶</button>
+      </nav>
+    </section>
+
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <small id="modal-kicker">SYSTEM MESSAGE</small>
+        <h2 id="modal-title"></h2>
+        <div id="modal-body"></div>
+        <div id="modal-actions"></div>
+      </div>
+    </div>
+  </main>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
