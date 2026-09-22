@@ -3,7 +3,7 @@ export const GAME_CONFIG = Object.freeze({
   saveKey: 'system_bug_save_v1',
   grid: { columns: 6, rows: 8, canvasWidth: 720, canvasHeight: 960, padding: 42 },
   player: { hp: 3, keys: 0, energy: 0 },
-  limits: { maxEntities: 64, maxLogLines: 4, maxScheduledEffects: 16, maxParticles: 36 },
+  limits: { maxEntities: 64, maxLogLines: 4, maxScheduledEffects: 16, maxParticles: 36, maxDispatchDepth: 32 },
   colors: {
     background: '#07141c', grid: '#17313a', player: '#57f5d0', wall: '#35515c',
     exit: '#ffc857', hazard: '#ff5e6c', key: '#9f86ff', door: '#bf8d48',

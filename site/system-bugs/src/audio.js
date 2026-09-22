@@ -31,4 +31,6 @@ export class AudioSystem {
     };
     cues[name]?.();
   }
+  suspend() { if (this.context?.state === 'running') this.context.suspend(); }
+  resume() { if (this.settings.sound && this.context?.state === 'suspended') this.context.resume(); }
 }

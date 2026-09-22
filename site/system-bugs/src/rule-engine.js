@@ -10,6 +10,8 @@ export class RuleEngine {
     this.turn = 0;
     this.scheduled = [];
     this.maxScheduled = limits.maxScheduledEffects ?? 16;
+    this.maxDispatchDepth = limits.maxDispatchDepth ?? 32;
+    this.dispatchDepth = 0;
     this.ended = false;
   }
 
@@ -49,21 +51,31 @@ export class RuleEngine {
 
   dispatch(trigger, context = {}) {
     if (this.ended) return context;
-    for (const rule of this.rulesFor(trigger)) {
-      if (!this.evaluate(rule.condition, context)) continue;
-      if (this.shouldSkipCollision(rule, context)) {
-        this.bus.emit('ruleSkipped', { rule, reason: 'CollisionOff' });
-        continue;
+    if (this.dispatchDepth >= this.maxDispatchDepth) {
+      this.bus.emit('engineLimit', { type: 'dispatchDepth', trigger, limit: this.maxDispatchDepth });
+      this.end(false, '规则递归超过安全限制');
+      return context;
+    }
+    this.dispatchDepth += 1;
+    try {
+      for (const rule of this.rulesFor(trigger)) {
+        if (!this.evaluate(rule.condition, context)) continue;
+        if (this.shouldSkipCollision(rule, context)) {
+          this.bus.emit('ruleSkipped', { rule, reason: 'CollisionOff' });
+          continue;
+        }
+        let executions = rule.runtime?.executionMultiplier ?? 1;
+        if (rule.runtime?.doubleUses !== undefined) {
+          if (rule.runtime.doubleUses <= 0) executions = 1;
+          else if (Number.isFinite(rule.runtime.doubleUses)) rule.runtime.doubleUses -= 1;
+        }
+        this.bus.emit('ruleTriggered', { rule, executions });
+        for (let n = 0; n < executions; n += 1) {
+          for (const effect of rule.effects) this.applyEffect(effect, context, rule);
+        }
       }
-      let executions = rule.runtime?.executionMultiplier ?? 1;
-      if (rule.runtime?.doubleUses !== undefined) {
-        if (rule.runtime.doubleUses <= 0) executions = 1;
-        else if (Number.isFinite(rule.runtime.doubleUses)) rule.runtime.doubleUses -= 1;
-      }
-      this.bus.emit('ruleTriggered', { rule, executions });
-      for (let n = 0; n < executions; n += 1) {
-        for (const effect of rule.effects) this.applyEffect(effect, context, rule);
-      }
+    } finally {
+      this.dispatchDepth -= 1;
     }
     return context;
   }

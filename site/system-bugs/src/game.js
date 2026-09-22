@@ -1,23 +1,28 @@
-import { GAME_CONFIG, DIRECTIONS } from './config.js';
-import { EventBus } from './event-bus.js';
-import { RuleEngine } from './rule-engine.js';
-import { BugModule, BUG_DEFINITIONS } from './bug-modules.js';
-import { cloneLevel, LEVELS, CHAPTERS } from './level-config.js';
+import { GAME_CONFIG } from './config.js';
+import { BUG_DEFINITIONS } from './bug-modules.js';
+import { LEVELS, CHAPTERS } from './level-config.js';
 import { SaveStore } from './save.js';
 import { AudioSystem } from './audio.js';
 import { Renderer } from './renderer.js';
+import { GameSession } from './core/game-session.js';
+import { createWebPlatform } from './platform/web-platform.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 
 export class Game {
-  constructor() {
-    this.save = new SaveStore();
+  constructor({ platform = createWebPlatform() } = {}) {
+    this.platform = platform;
+    this.save = new SaveStore(platform.storage);
     this.audio = new AudioSystem(this.save.data.settings);
     this.renderer = new Renderer($('#game-canvas'));
-    this.level = null; this.engine = null; this.player = null;
-    this.selectedBugs = new Set(); this.injected = false; this.paused = false; this.touchStart = null;
+    this.level = null; this.engine = null; this.player = null; this.session = null;
+    this.paused = false; this.touchStart = null; this.wasBackgrounded = false;
     this.bindUi(); this.renderLevelSelect(); this.updateContinue();
+    this.disposeLifecycle = platform.lifecycle?.subscribe({
+      onHide: () => this.handleHide(),
+      onShow: () => this.handleShow()
+    });
   }
 
   bindUi() {
@@ -48,7 +53,7 @@ export class Game {
 
   showScreen(id) { $$('.screen').forEach(screen=>screen.classList.toggle('active',screen.id===id)); }
   updateContinue() { $('#continue-button').classList.toggle('hidden', Object.keys(this.save.data.completed).length===0); }
-  showLevels() { this.paused=true; this.level=null; this.renderLevelSelect(); this.showScreen('level-select'); }
+  showLevels() { this.paused=true; this.session?.pause(); this.level=null; this.session=null; this.renderLevelSelect(); this.showScreen('level-select'); }
 
   renderLevelSelect(chapter=CHAPTERS[0]) {
     $('#chapter-tabs').innerHTML=CHAPTERS.map(name=>`<button class="${name===chapter?'active':''}" data-chapter="${name}">${name}</button>`).join('');
@@ -61,11 +66,8 @@ export class Game {
   }
 
   startLevel(levelId) {
-    this.level=cloneLevel(levelId); this.selectedBugs.clear(); this.injected=false; this.paused=false;
-    this.player={id:'player',type:'player',x:this.level.start.x,y:this.level.start.y,active:true,stats:{...GAME_CONFIG.player,...this.level.initialStats}};
-    const bus=new EventBus();
-    this.engine=new RuleEngine({rules:this.level.rules,entities:this.level.entities,player:this.player,eventBus:bus,limits:GAME_CONFIG.limits});
-    this.bindEvents(bus); this.renderer.setScene(this.level,this.player,this.level.entities);
+    this.session=new GameSession({levelId}); this.level=this.session.level; this.engine=this.session.engine; this.player=this.session.player; this.paused=false;
+    this.bindEvents(this.session.bus); this.renderer.setScene(this.level,this.player,this.level.entities);
     $('#level-code').textContent=`CASE ${String(levelId).padStart(2,'0')}`; $('#level-title').textContent=this.level.title;
     this.showScreen('game'); this.renderRules(); this.renderBugs(); this.renderStatus(); this.log(`> ${this.level.briefing}`);
     if (this.level.tutorial && !this.save.data.tutorialSeen[levelId]) this.openModal('新手协议',this.level.tutorial,[{label:'开始分析',primary:true,action:()=>{this.closeModal();this.save.markTutorial(levelId);}}]);
@@ -75,6 +77,7 @@ export class Game {
     bus.on('ruleTriggered',({rule,executions})=>this.log(`RULE ${rule.id}${executions>1?' ×'+executions:''}`));
     bus.on('ruleSkipped',({rule})=>this.log(`BUG 绕过 ${rule.id}`,'warn'));
     bus.on('scheduled',({turns})=>{this.log(`终止已排队：${turns} 回合`,'warn');this.toast(`死亡判定延迟 ${turns} 回合`);});
+    bus.on('engineLimit',()=>{this.log('RULE_LOOP_ABORTED','warn');this.toast('规则循环已被安全终止');});
     bus.on('signFlipped',()=>this.toast('数值符号已翻转'));
     bus.on('statChanged',({key,delta})=>{this.log(`${key.toUpperCase()} ${delta>=0?'+':''}${delta}`);this.audio.play(delta>0?'collect':'move');this.renderStatus();});
     bus.on('log',({text,tone})=>this.log(text,tone));
@@ -89,52 +92,46 @@ export class Game {
 
   renderBugs() {
     $('#bug-tray').innerHTML=this.level.bugs.map(choice=>{
-      const def=BUG_DEFINITIONS[choice.module]; const selected=this.selectedBugs.has(choice.id);
-      return `<button class="bug-card ${selected?'selected':''} ${this.injected?'used':''}" data-bug="${choice.id}" ${this.injected?'disabled':''}><b>${def.glyph} ${choice.title}</b><small>${choice.description}<br>副作用：${def.sideEffect}</small></button>`;
+      const def=BUG_DEFINITIONS[choice.module]; const selected=this.session.selectedBugs.has(choice.id);
+      return `<button class="bug-card ${selected?'selected':''} ${this.session.injected?'used':''}" data-bug="${choice.id}" ${this.session.injected?'disabled':''}><b>${def.glyph} ${choice.title}</b><small>${choice.description}<br>副作用：${def.sideEffect}</small></button>`;
     }).join('');
     $$('[data-bug]').forEach(button=>button.addEventListener('click',()=>this.toggleBug(button.dataset.bug)));
-    $('#budget-value').textContent=String(this.level.budget-this.selectedBugs.size);
-    $('#inject-button').disabled=this.injected||this.selectedBugs.size===0;
+    $('#budget-value').textContent=String(this.session.remainingBudget);
+    $('#inject-button').disabled=this.session.injected||this.session.selectedBugs.size===0;
   }
 
   toggleBug(id) {
-    if (this.injected) return;
-    if (this.selectedBugs.has(id)) this.selectedBugs.delete(id);
-    else if (this.selectedBugs.size < this.level.budget) this.selectedBugs.add(id);
-    else this.toast(`错误预算上限：${this.level.budget}`);
+    const result=this.session?.toggleBug(id);
+    if(result?.reason==='budgetExceeded')this.toast(`错误预算上限：${this.level.budget}`);
     this.renderBugs();
   }
 
   inject() {
-    if (this.injected||!this.selectedBugs.size) return;
-    for (const id of this.selectedBugs) {
-      const injection=this.level.bugs.find(item=>item.id===id); BugModule.apply(this.engine.rules,injection);
+    const result=this.session?.inject();
+    if(!result?.ok)return;
+    for (const injection of result.applied) {
       this.log(`INJECT ${injection.module} → ${injection.ruleId}`,'warn');
     }
-    this.injected=true; this.audio.play('inject'); this.feedback([25,30,25]);
+    this.audio.play('inject'); this.feedback([25,30,25]);
     if(!this.save.data.settings.reducedMotion)this.renderer.burst(this.player);
     this.renderRules(); this.renderBugs(); this.toast('异常已写入 · 移动权限开放');
   }
 
   move(directionName) {
-    if (!this.level||this.paused||this.engine?.ended) return;
-    if (!this.injected) { this.toast('请先选择并注入 BUG'); return; }
-    const d=DIRECTIONS[directionName]; if (!d) return;
-    const to={x:this.player.x+d.x,y:this.player.y+d.y};
-    if (to.x<0||to.y<0||to.x>=this.level.width||to.y>=this.level.height) { this.audio.play('blocked');this.feedback(20);this.toast('越界请求被拒绝');return; }
-    const context={from:{x:this.player.x,y:this.player.y},to,blocked:false}; this.engine.dispatch('tryMove',context);
-    if (context.blocked) { this.audio.play('blocked');this.feedback(20);this.log('MOVE_DENIED');this.renderer.draw();return; }
-    this.player.x=to.x;this.player.y=to.y;this.audio.play('move');
-    const source=this.engine.entityAt(to); if(source) this.engine.dispatch('enter',{source,to});
-    this.renderer.draw();
-    if(!this.engine.ended) this.engine.advanceTurn();
+    if (!this.session||this.paused) return;
+    const result=this.session.move(directionName);
+    if(result.reason==='notInjected'){this.toast('请先选择并注入 BUG');return;}
+    if(result.reason==='outOfBounds'){this.audio.play('blocked');this.feedback(20);this.toast('越界请求被拒绝');return;}
+    if(result.reason==='blocked'){this.audio.play('blocked');this.feedback(20);this.log('MOVE_DENIED');this.renderer.draw();return;}
+    if(!result.ok)return;
+    this.audio.play('move'); this.renderer.draw();
     this.renderStatus();
   }
 
   renderStatus() {
     if(!this.player||!this.engine)return;
     $('#hp-value').textContent=this.player.stats.hp; $('#key-value').textContent=this.player.stats.keys; $('#turn-value').textContent=this.engine.turn;
-    $('#budget-value').textContent=String(Math.max(0,this.level.budget-this.selectedBugs.size));
+    $('#budget-value').textContent=String(this.session?.remainingBudget ?? 0);
   }
 
   log(text,tone='') {
@@ -144,12 +141,12 @@ export class Game {
 
   toast(text) { const el=$('#toast');el.textContent=text;el.classList.add('show');clearTimeout(this.toastTimer);this.toastTimer=setTimeout(()=>el.classList.remove('show'),1500); }
 
-  feedback(pattern) { if(this.save.data.settings.vibration&&navigator.vibrate)navigator.vibrate(pattern); }
+  feedback(pattern) { if(this.save.data.settings.vibration)this.platform.haptics?.vibrate(pattern); }
 
   finish(won,reason) {
     this.paused=true; this.audio.play(won?'win':'lose'); this.feedback(won?[35,35,60]:[90,40,90]);
     if(!this.save.data.settings.reducedMotion)this.renderer.burst(this.player,won?GAME_CONFIG.colors.exit:GAME_CONFIG.colors.red,24);
-    if(won){ const stars=Math.max(1,3-Math.max(0,this.selectedBugs.size-this.level.budget));this.save.complete(this.level.id,stars);this.updateContinue(); }
+    if(won){ const stars=Math.max(1,3-Math.max(0,this.session.selectedBugs.size-this.level.budget));this.save.complete(this.level.id,stars);this.updateContinue(); }
     const actions=won?
       [{label:'关卡列表',action:()=>{this.closeModal();this.showLevels();}},{label:Number(this.level.id)<LEVELS.length?'下一关':'查看档案',primary:true,action:()=>{const next=Math.min(LEVELS.length,Number(this.level.id)+1);this.closeModal();Number(this.level.id)<LEVELS.length?this.startLevel(next):this.showLevels();}}]:
       [{label:'关卡列表',action:()=>{this.closeModal();this.showLevels();}},{label:'重新开始',primary:true,action:()=>{const id=this.level.id;this.closeModal();this.startLevel(id);}}];
@@ -157,11 +154,11 @@ export class Game {
   }
 
   openPause() {
-    if(!this.level)return;this.paused=true;
+    if(!this.level)return;this.paused=true;this.session?.pause();
     this.openModal('执行已暂停','世界状态已冻结。可继续、重新载入本关或返回档案。',[
       {label:'返回档案',action:()=>{this.closeModal();this.showLevels();}},
       {label:'重新开始',action:()=>{const id=this.level.id;this.closeModal();this.startLevel(id);}},
-      {label:'继续',primary:true,action:()=>{this.paused=false;this.closeModal();}}
+      {label:'继续',primary:true,action:()=>{this.paused=false;this.session?.resume();this.closeModal();}}
     ]);
   }
 
@@ -181,4 +178,15 @@ export class Game {
     $('#modal').classList.remove('hidden');
   }
   closeModal() { $('#modal').classList.add('hidden'); }
+
+  handleHide() {
+    this.save.persist(); this.audio.suspend();
+    if(this.level&&!this.engine?.ended){this.wasBackgrounded=true;this.paused=true;this.session?.pause();}
+  }
+
+  handleShow() {
+    if(!this.wasBackgrounded)return;
+    this.wasBackgrounded=false;
+    if(this.level&&!this.engine?.ended)this.openPause();
+  }
 }
